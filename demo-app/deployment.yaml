@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  labels: { app: demo-app }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: demo-app }
+  template:
+    metadata:
+      labels: { app: demo-app }
+    spec:
+      containers:
+        - name: demo-app
+          image: traefik/whoami:v1.11   # Hay que describir un estado exacto y reproducible. No lo que este de "moda"
+          ports:
+            - containerPort: 80

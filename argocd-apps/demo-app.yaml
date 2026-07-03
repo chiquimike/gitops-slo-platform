@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/chiquimike/gitops-slo-platform.git
+    targetRevision: main
+    path: apps/demo-app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  syncPolicy:
+    automated:
+      prune: true        # borras un manifiesto de Git → Argo lo borra del clúster
+      selfHeal: true     # alguien hace kubectl edit → Argo lo revierte
+    syncOptions:
+      - CreateNamespace=true
