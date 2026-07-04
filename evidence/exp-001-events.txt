@@ -1,0 +1,2 @@
+2026-07-03T17:34:53Z   ScalingReplicaSet   Scaled up   from 3 to 8
+2026-07-03T17:39:27Z   ScalingReplicaSet   Scaled down from 8 to 3
