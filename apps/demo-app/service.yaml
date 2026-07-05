@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app
+  labels:
+    app: demo-app
+spec:
+  # El selector DEBE coincidir con las labels de los pods del Deployment.
+  # Si no coincide, el Service no enruta a ningún pod y falla en SILENCIO
+  # (sin error). Aquí matcheamos con template.metadata.labels.app del deployment.
+  selector:
+    app: demo-app
+  ports:
+    - name: http
+      port: 80         # puerto por el que otros acceden al Service
+      targetPort: 80   # puerto que expone el contenedor whoami (escucha en 80)
+  type: ClusterIP      # interno al clúster; en Fase 1 accedemos vía port-forward

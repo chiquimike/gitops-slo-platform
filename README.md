@@ -36,14 +36,23 @@ Git (GitHub) ──reconcilia──> Argo CD ──despliega──> [ demo-app |
 
 ## Stack
 
-| Capa               | Herramienta                        |
-|--------------------|------------------------------------|
-| Kubernetes local   | k3d (envuelve k3s)                 |
-| GitOps             | Argo CD                            |
-| App de demo        | FastAPI (Python) instrumentada     |
-| Observabilidad     | Prometheus + Grafana + Alertmanager|
-| Estado durable     | Google Cloud Storage (GCS)         |
-| IaC                | Terraform (backend remoto en GCS)  |
+Estado por componente: `Operativo` (construido y probado), `En construcción`
+(fase activa), `Planeado` (fase futura). El repo refleja el estado real; este
+stack describe la arquitectura objetivo.
+
+| Capa               | Herramienta                         | Estado            |
+|--------------------|-------------------------------------|-------------------|
+| Kubernetes local   | k3d (envuelve k3s)                  | Operativo         |
+| GitOps             | Argo CD                             | Operativo         |
+| App de demo        | FastAPI (Python) instrumentada      | En construcción   |
+| Observabilidad     | Prometheus + Grafana + Alertmanager | Planeado          |
+| SLO alerting       | Prometheus burn-rate rules          | Planeado          |
+| Estado durable     | Google Cloud Storage (GCS)          | Planeado          |
+| IaC                | Terraform (backend remoto en GCS)   | Planeado          |
+
+> Nota: durante la Fase 1 el workload de demo es `traefik/whoami` (imagen
+> trivial usada para validar el loop de GitOps). Se reemplaza por la FastAPI
+> instrumentada en la Fase 2.
 
 ## Cómo correrlo
 
