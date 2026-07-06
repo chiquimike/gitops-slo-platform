@@ -1,0 +1,10 @@
+# Dependencias de demo-app. Versiones pineadas para reproducibilidad
+# (mismo principio que pinear la imagen de contenedor en Fase 1).
+#
+# Si al instalar pip reporta que alguna versión no existe, toma la última
+# estable con `pip install <paquete>` y actualiza el pin aquí. En un proyecto
+# de producción esto lo maneja un lockfile (pip-tools, poetry.lock, uv.lock).
+
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+prometheus-client==0.21.1

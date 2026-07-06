@@ -1,0 +1,31 @@
+# ─── Python ───────────────────────────────────────────────────────────────
+# Entornos virtuales: se regeneran con pip install. NUNCA van a Git.
+venv/
+.venv/
+env/
+
+# Cache de bytecode de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Artefactos de build / distribución
+*.egg-info/
+dist/
+build/
+
+# ─── Herramientas / entorno ──────────────────────────────────────────────
+# Variables de entorno con secretos (si algún día usamos un .env). NUNCA a Git.
+.env
+*.env
+
+# Archivos de editor / SO
+.vscode/
+.idea/
+.DS_Store
+
+# ─── Terraform (para la Fase 6) ──────────────────────────────────────────
+# El state puede contener secretos y el directorio .terraform es pesado.
+.terraform/
+*.tfstate
+*.tfstate.*

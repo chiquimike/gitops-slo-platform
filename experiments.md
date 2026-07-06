@@ -71,15 +71,72 @@ cuándo NO optimizar es parte de la decisión.
   con timestamps absolutos usados para la medición.
 
 ### Talking point derivado
-_"Mi self-heal por defecto tardó ~4.5 min porque Argo CD reconcilia por polling
+Mi self-heal por defecto tardó ~4.5 min porque Argo CD reconcilia por polling
 cada ~3 min. No es lentitud, es un tradeoff entre latencia de reconciliación y
 carga sobre Git/API server. Si necesitara más reactividad, bajaría el intervalo
 o añadiría webhooks, a costa de más carga. El número no es fijo: es una decisión
-de diseño."_
+de diseño.
 
 ---
 
-## EXP-002 — [[siguiente experimento]]  _(plantilla)_
+## EXP-002 — Inyección de caos y degradación del SLI de disponibilidad
+
+- **Fecha:** 2026-07-05
+- **Fase:** 2 (FastAPI instrumentada) — validación local, sin Kubernetes.
+- **Entorno:** app corriendo con uvicorn en localhost:8000, un solo proceso.
+  Instrumentación manual con prometheus-client.
+
+### Hipótesis
+El endpoint de caos inyectable (`/chaos`) permite degradar de forma controlada
+el SLI de disponibilidad, y la instrumentación manual (Counter
+`http_requests_total` con label `status_code`) lo refleja fielmente en tiempo
+real, distinguiendo respuestas exitosas (200) de fallidas (500).
+
+### Método
+1. Reinicio de la app para partir de contadores en cero (línea base limpia).
+2. Línea base SIN caos: 20 requests a `/api/work`.
+   `for i in {1..20}; do curl -s localhost:8000/api/work > /dev/null; done`
+3. Captura de `/metrics` -> foto "exp-002-baseline-metrics.png".
+4. Activación de caos al 50%: `curl -X POST "localhost:8000/chaos?fail_rate=0.5"`.
+5. 20 requests más a `/api/work` con caos activo.
+6. Captura de `/metrics` -> foto "exp-002-chaos-metrics.png".
+7. Apagado de caos: `curl -X POST "localhost:8000/chaos?fail_rate=0"`.
+
+### Resultado
+- Requests exitosos (status_code=200) a /api/work: 30
+- Requests fallidos  (status_code=500) a /api/work: 10
+- Total: [[40]]
+- SLI de disponibilidad observado: 30 / 40 = 75%
+
+  <!-- Ejemplo del acomodo de los datos: exitosos / total = [X]%. Podemos hacer
+       distintas corridas para que nos den más porcentajes. -->
+
+### Interpretación
+El fail_rate es una PROBABILIDAD, no una cuota exacta: con fail_rate=0.5 sobre
+20 requests, el número de fallos ronda ~10 pero varía por aleatoriedad (obtener
+11 o 9 es normal). La instrumentación captura fielmente cada resultado por
+status_code. El histograma http_request_duration_seconds captura en paralelo la
+latencia (SLI de latencia), disponible para el SLO de Fase 4.
+
+### Limitaciones / honestidad
+- Prueba local de un solo proceso, sin Kubernetes ni concurrencia real.
+- El estado de caos vive en memoria por proceso: con varias réplicas no se
+  propaga (limitación conocida, a manejar en la fase de experimentos).
+- Demostración del mecanismo de instrumentación + caos, no un benchmark.
+
+### Evidencia
+- evidence/exp-002-baseline-metrics.png  (Counter solo con status_code=200)
+- evidence/exp-002-chaos-metrics.png      (Counter con 200 y 500)
+
+### Talking point derivado
+Mi instrumentacion manual distingue exito de fallo por status_code en un
+Counter, del que sale directamente el SLI de disponibilidad. Validé el mecanismo
+inyectando caos controlado y observando el SLI degradarse en tiempo real, con
+evidencia antes/después.
+
+---
+
+## EXP-003 — [[siguiente experimento]]  _(plantilla)_
 
 - **Fecha:**
 - **Fase:**
