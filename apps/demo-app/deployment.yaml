@@ -13,6 +13,7 @@ spec:
     spec:
       containers:
         - name: demo-app
-          image: traefik/whoami:v1.11   # Hay que describir un estado exacto y reproducible. No lo que este de "moda"
+          image: demo-app:0.1.0   # Nuestra imagen
+          imagePullPolicy: IfNotPresent # Para que k8s use la imagen local en vez de la de internet
           ports:
-            - containerPort: 80
+            - containerPort: 8000 # Cambiamos el puerto al 8000

@@ -55,8 +55,39 @@ depuré vale más que un flujo que salió a la primera.
 
 **Objetivo:** app real con endpoint `/metrics` (formato Prometheus) y un
 endpoint de falla inyectable para chaos posterior.
+**Estado:** en construcción (2A y 2B completos; 2C en curso).
 
-_Se completará al arrancar la fase._
+### 2A — App instrumentada corriendo local
+- FastAPI con instrumentación MANUAL vía prometheus-client (decisión deliberada
+  sobre usar un instrumentator automático, para entender de qué métrica sale
+  cada SLI). Tres tipos de métrica: Counter (disponibilidad), Histogram
+  (latencia), Gauge (requests en vuelo).
+- Endpoint `/chaos` para inyectar fallas (fail_rate) y latencia (latency_ms) en
+  runtime, sin redeploy. Limitación conocida: estado en memoria por proceso, no
+  se propaga entre réplicas.
+- Validado local con uvicorn: `/metrics` poblándose con tráfico real.
+- Experimento asociado: EXP-002 (degradación de SLI vía chaos, SLI observado 75%).
+
+### 2B — Dockerización
+- Dockerfile de nivel productivo con tres decisiones defendibles:
+  - Imagen base `python:3.12-slim` (balance tamaño/compatibilidad; se descartó
+    Alpine por incompatibilidad de musl con wheels precompiladas).
+  - Orden de capas para cache: copiar requirements e instalar ANTES de copiar
+    el código, para que un cambio de código no reinstale dependencias.
+  - Usuario no-root (`appuser`) por seguridad; verificado con
+    `docker exec ... whoami` -> appuser.
+- Imagen resultante: ~231 MB en disco. Línea base para futuras optimizaciones
+  (p. ej. multi-stage build).
+- Añadido `.dockerignore` para excluir venv y basura del contexto de build.
+- Validado: `/metrics` responde igual desde el contenedor que desde local.
+
+### 2C — Despliegue en k3d vía Argo CD  _(en curso)_
+- Manifiestos actualizados: imagen `demo-app:0.1.0`, puerto 8000,
+  `imagePullPolicy: IfNotPresent`.
+- Aprendizaje central: la frontera GitOps vs CI/CD. GitOps despliega lo
+  declarado en Git; construir y publicar la imagen es responsabilidad de CI/CD.
+  Localmente se simula con `k3d image import` (reemplaza el push a un registry).
+
 
 ---
 

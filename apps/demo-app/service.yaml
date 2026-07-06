@@ -12,6 +12,6 @@ spec:
     app: demo-app
   ports:
     - name: http
-      port: 80         # puerto por el que otros acceden al Service
-      targetPort: 80   # puerto que expone el contenedor whoami (escucha en 80)
-  type: ClusterIP      # interno al clúster; en Fase 1 accedemos vía port-forward
+      port: 8000         # puerto por el que otros acceden al Service
+      targetPort: 8000   # puerto que expone nuestra imagen (escucha en 8000)
+  type: ClusterIP      # interno al clúster; accedemos vía port-forward 
