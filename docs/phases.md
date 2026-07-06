@@ -7,7 +7,7 @@ depuré vale más que un flujo que salió a la primera.
 
 ---
 
-## Fase 1 — Sustrato GitOps
+## Fase 1 — Sustrato GitOps _(completada)_
 
 **Objetivo:** que un `git push` modifique el clúster sin tocar `kubectl`.
 **Estado:** funcionalmente completa; cierre formal pendiente de documentación.
@@ -51,7 +51,7 @@ depuré vale más que un flujo que salió a la primera.
 
 ---
 
-## Fase 2 — FastAPI instrumentada  _(no iniciada)_
+## Fase 2 — FastAPI instrumentada  _(completada)_
 
 **Objetivo:** app real con endpoint `/metrics` (formato Prometheus) y un
 endpoint de falla inyectable para chaos posterior.
@@ -81,13 +81,12 @@ endpoint de falla inyectable para chaos posterior.
 - Añadido `.dockerignore` para excluir venv y basura del contexto de build.
 - Validado: `/metrics` responde igual desde el contenedor que desde local.
 
-### 2C — Despliegue en k3d vía Argo CD  _(en curso)_
+### 2C — Despliegue en k3d vía Argo CD 
 - Manifiestos actualizados: imagen `demo-app:0.1.0`, puerto 8000,
   `imagePullPolicy: IfNotPresent`.
 - Aprendizaje central: la frontera GitOps vs CI/CD. GitOps despliega lo
   declarado en Git; construir y publicar la imagen es responsabilidad de CI/CD.
   Localmente se simula con `k3d image import` (reemplaza el push a un registry).
-
 
 ---
 
