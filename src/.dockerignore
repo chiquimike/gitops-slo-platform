@@ -1,0 +1,11 @@
+# Excluye del contexto de build lo que NO debe entrar a la imagen.
+# Mismo espíritu que .gitignore, pero para Docker: mantiene la imagen limpia
+# y el build rápido (no envía miles de archivos innecesarios al daemon).
+
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.git/
+.gitignore
+*.md
