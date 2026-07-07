@@ -1,0 +1,55 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Deployment de Prometheus — une IDENTIDAD + CONFIG + CÓMPUTO en un pod vivo.
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: monitoring
+  labels: { app: prometheus }
+spec:
+  replicas: 1                      # 1 réplica: Prometheus no es stateless trivial;
+                                   # escalarlo requiere estrategia (federación/HA),
+                                   # fuera de alcance aquí. Decisión consciente.
+  selector:
+    matchLabels: { app: prometheus }
+  template:
+    metadata:
+      labels: { app: prometheus }
+    spec:
+      # IDENTIDAD: usa la ServiceAccount con los permisos RBAC de solo lectura.
+      # Sin esta línea, el pod usaría 'default' y el service discovery fallaría
+      # por falta de permisos para leer endpoints/pods/services.
+      serviceAccountName: prometheus
+
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.54.1   # versión pineada (reproducibilidad)
+          args:
+            # Le decimos a Prometheus dónde está su archivo de config.
+            # Esta ruta es DONDE montamos el ConfigMap (ver volumeMounts abajo).
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.path=/prometheus"   # dónde guarda las series temporales
+          ports:
+            - containerPort: 9090   # puerto de la UI y API de Prometheus
+
+          # MONTAJE: aquí el ConfigMap se vuelve un archivo dentro del contenedor.
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/prometheus   # el ConfigMap aparece como archivos aquí
+            - name: storage-volume
+              mountPath: /prometheus        # almacenamiento de las métricas
+
+      # VOLÚMENES: definen de dónde vienen los montajes de arriba.
+      volumes:
+        # El ConfigMap 'prometheus-config' se expone como volumen. Su clave
+        # 'prometheus.yml' se vuelve el archivo /etc/prometheus/prometheus.yml
+        - name: config-volume
+          configMap:
+            name: prometheus-config
+
+        # Almacenamiento EFÍMERO (emptyDir): las métricas se PIERDEN si el pod
+        # muere. Aceptable para aprender; en producción sería un PersistentVolume.
+        # Limitación consciente y documentada (talking point).
+        - name: storage-volume
+          emptyDir: {}

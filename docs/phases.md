@@ -44,10 +44,10 @@ depuré vale más que un flujo que salió a la primera.
   ADR-004 (semilla app-of-apps). Ver [`decisions.md`](decisions.md).
 
 ### Pendientes para cerrar la fase
-- [ ] Rellenar EXP-001 con el número medido y su interpretación.
-- [ ] Versionar capturas en `evidence/`.
-- [ ] `git add` / `commit` / `push`.
-- [ ] (Opcional) Correr self-heal 2-3 veces y reportar rango.
+- [X] Rellenar EXP-001 con el número medido y su interpretación.
+- [X] Versionar capturas en `evidence/`.
+- [X] `git add` / `commit` / `push`.
+- [X] (Opcional) Correr self-heal 2-3 veces y reportar rango.
 
 ---
 

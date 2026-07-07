@@ -1,0 +1,60 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# RBAC para Prometheus — "¿QUIÉN puede hacer QUÉ sobre CUÁLES recursos?"
+#
+# Tres piezas que encajan:
+#   1. ServiceAccount     -> la IDENTIDAD de Prometheus (el QUIÉN)
+#   2. ClusterRole        -> los PERMISOS de solo lectura (el QUÉ)
+#   3. ClusterRoleBinding -> el PEGAMENTO que une identidad con permisos
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ─── 1. IDENTIDAD ──────────────────────────────────────────────────────────
+# La identidad con la que el pod de Prometheus se presenta ante la API de K8s.
+# Sin esto usaría la ServiceAccount 'default', que no debe tener estos permisos.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring
+---
+# ─── 2. PERMISOS (ClusterRole, no Role: necesita ver OTROS namespaces) ──────
+# LEAST PRIVILEGE: solo verbos de LECTURA (get, list, watch). NUNCA create ni
+# delete. Prometheus observa el clúster para descubrir targets; no lo modifica.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+  # Descubrir QUÉ scrapear: Prometheus lista pods, services y endpoints para
+  # saber qué targets existen y dónde están (service discovery).
+  #   - endpoints: son las IPs reales detrás de un Service. Prometheus scrapea
+  #     estas IPs, no el Service directamente.
+  #   - services y pods: dan las labels/anotaciones que deciden qué scrapear.
+  - apiGroups: [""]                 # "" = core API group (recursos base de K8s)
+    resources: ["nodes", "services", "endpoints", "pods"]
+    verbs: ["get", "list", "watch"] # SOLO lectura. Este es el corazón de least privilege.
+
+  # Leer configmaps: Prometheus puede necesitar leer configuración montada.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
+
+  # Métricas del propio nodo (kubelet): endpoint no-namespaced que expone
+  # métricas de nodo. Se accede como sub-recurso, por eso nonResourceURLs.
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+# ─── 3. EL PEGAMENTO ───────────────────────────────────────────────────────
+# Conecta la ServiceAccount 'prometheus' (en monitoring) con el ClusterRole
+# 'prometheus'. Sin este binding, la identidad no tendría ningún poder.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus          # <- apunta al ClusterRole de arriba
+subjects:
+  - kind: ServiceAccount
+    name: prometheus         # <- la identidad que recibe los permisos
+    namespace: monitoring

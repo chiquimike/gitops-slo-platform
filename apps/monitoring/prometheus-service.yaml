@@ -1,0 +1,17 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Service de Prometheus — para acceder a su UI (puerto 9090) vía port-forward.
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: monitoring
+  labels: { app: prometheus }
+spec:
+  selector:
+    app: prometheus          # debe coincidir con las labels del pod del Deployment
+  ports:
+    - name: http
+      port: 9090
+      targetPort: 9090
+  type: ClusterIP            # interno; accedemos vía port-forward, igual que Argo

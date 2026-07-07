@@ -1,0 +1,25 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Application de Argo CD para la plataforma de observabilidad.
+# Mismo patrón que demo-app: apunta a una carpeta del repo y reconcilia.
+# Esto despliega TODO apps/monitoring/ (RBAC + ConfigMap + Deployment + Service).
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/chiquimike/gitops-slo-platform.git  
+    targetRevision: main
+    path: apps/monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true         # borrar de Git = borrar del clúster
+      selfHeal: true      # revierte cambios manuales al estado de Git
+    syncOptions:
+      - CreateNamespace=true   # Argo crea el namespace 'monitoring' (no a mano)

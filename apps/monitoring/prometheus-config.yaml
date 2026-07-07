@@ -1,0 +1,61 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ConfigMap: la configuración de Prometheus (prometheus.yml) montada como archivo.
+# Se versiona en Git; cambiarla = editar YAML + reconciliar con Argo (no rebuild).
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    # ─── Configuración global ──────────────────────────────────────────────
+    global:
+      scrape_interval: 15s      # cada cuánto Prometheus jala métricas de cada target
+      evaluation_interval: 15s  # cada cuánto evalúa reglas de alerta (Fase 4)
+
+    # ─── Jobs de scrape: QUÉ scrapear ──────────────────────────────────────
+    scrape_configs:
+
+      # JOB 1: el propio Prometheus (se monitorea a sí mismo — buena práctica).
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      # JOB 2: NUESTRA app FastAPI, vía service discovery de Kubernetes.
+      # Aquí está el corazón: Prometheus pregunta a la API de K8s por TODOS los
+      # endpoints del clúster, y luego el relabeling filtra solo los nuestros.
+      - job_name: 'demo-app'
+        kubernetes_sd_configs:
+          - role: endpoints          # descubre vía objetos Endpoints (las IPs reales de pods)
+                                      # (por eso el RBAC necesitaba leer 'endpoints')
+
+        # ─── RELABELING: el portero que filtra y transforma ────────────────
+        # Sin esto, Prometheus intentaría scrapear TODO el clúster y fallaría.
+        relabel_configs:
+
+          # REGLA 1 — Filtrar por namespace: solo queremos targets en 'demo'.
+          # Compara el metadato __meta_kubernetes_namespace con 'demo'; si no
+          # coincide, el target se descarta (action: keep = "quédate solo con estos").
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: demo
+
+          # REGLA 2 — Filtrar por Service: solo el Service llamado 'demo-app'.
+          # Evita scrapear otros services que pudiera haber en 'demo'.
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: demo-app
+
+          # REGLA 3 — Filtrar por puerto: solo el puerto con nombre 'http' (el 8000).
+          # Un Service puede exponer varios puertos; scrapeamos solo el correcto.
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+
+          # ─── Reglas cosméticas: etiquetar bonito las métricas resultantes ──
+          # Copian metadatos crudos de K8s a labels legibles en las métricas.
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
