@@ -96,10 +96,55 @@ reserva para estado durable, que es donde vive el patrón real de producción.
 
 ---
 
+## ADR-006 — Desactivación del applicationset-controller de Argo CD
+
+**Contexto:** El `argocd-applicationset-controller` entró en CrashLoopBackOff
+(139 reinicios). Diagnóstico vía `kubectl logs --previous`: el controller
+arrancaba pero no encontraba su CRD (`no matches for kind "ApplicationSet" in
+version "argoproj.io/v1alpha1"... if kind is a CRD, it should be installed
+before calling Start`). Es el gotcha clásico de orden de instalación: un
+controller que arranca antes de que exista el CRD que consume. El `describe`
+confirmó que NO era problema de imagen ni de recursos (imagen pulled OK), sino
+lógica interna por el CRD ausente.
+
+**Decisión:** Desactivar el controller escalando su deployment a 0 réplicas:
+`kubectl scale deployment argocd-applicationset-controller --replicas=0 -n argocd`
+
+**Por qué (no instalar el CRD faltante):**
+- El proyecto NO usa ApplicationSets. Las Applications (demo-app, monitoring) se
+  crean manualmente, una por una. Un controller para un tipo que no se usa es
+  superficie operativa sin beneficio.
+- Principio aplicado: minimizar la superficie operativa. No se corren ni
+  mantienen componentes que no se usan; cada uno es algo que puede fallar,
+  consumir recursos o enmascarar otro problema (justo lo que este hizo).
+- Reversible: si en el futuro se necesitan ApplicationSets (p. ej. para gestionar
+  múltiples entornos), se instala el CRD y se reactiva el controller
+  (`--replicas=1`) con el orden correcto.
+
+**Por qué escalar a 0 y no borrar:** escalar a 0 elimina el CrashLoop y el
+consumo pero mantiene el deployment reactivable con un comando. Borrarlo exigiría
+reinstalar desde el manifiesto original de Argo. Menor blast radius, reversible.
+
+**Nota sobre GitOps / imperativo:** Argo CD se instaló imperativamente en Fase 1
+(bootstrap paradox) y no se gestiona a sí mismo vía un Application. Por eso este
+cambio imperativo (`kubectl scale`) es legítimo aquí y no hay selfHeal que lo
+revierta: los componentes de Argo no están bajo reconciliación de Argo.
+
+**Tradeoff reconocido:** algunos preferirían instalar el CRD para dejar Argo en
+su estado estándar completo. Se optó por mínimo-necesario sobre completo-por-
+defecto, priorizando una superficie operativa justificable y documentada.
+
+**Talking point:** Un componente sano junto a uno en CrashLoop sigue siendo un
+sistema degradado. Diagnostiqué la causa (CRD faltante), evalué si usaba el
+componente (no), y lo desactivé de forma reversible y documentada, en vez de
+parchear instalando algo que no necesito. Apagar porque falla es un parche;
+apagar porque no se necesita, con justificación escrita, es decisión de
+plataforma.
+
+---
+
 ## Pendientes de decisión (a documentar cuando se aborden)
 
-- **ADR-006** — Definición formal del SLI/SLO (qué mide exactamente la
-  disponibilidad: ¿pods healthy o tasa de éxito de requests?).
 - **ADR-007** — Estrategia de burn-rate alerting (ventanas múltiples) vs.
   umbrales estáticos.
 - **ADR-008** — Decisión sobre la capa de IA: qué se resuelve con reglas
