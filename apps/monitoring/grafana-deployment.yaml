@@ -1,0 +1,53 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Deployment de Grafana — la capa de VISUALIZACIÓN. No almacena métricas;
+# consulta a Prometheus (el data source) y dibuja.
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels: { app: grafana }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: grafana }
+  template:
+    metadata:
+      labels: { app: grafana }
+    spec:
+      # PERMISOS DE VOLUMEN: la imagen de Grafana corre como UID 472 (no-root).
+      # Un emptyDir nace propiedad de root; sin esto, Grafana no podría escribir
+      # en /var/lib/grafana y crashearía. fsGroup 472 hace el volumen escribible
+      # por el grupo de Grafana. (Gotcha clásico de permisos de volumen.)
+      securityContext:
+        fsGroup: 472
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.2.0   # versión pineada (reproducibilidad)
+          ports:
+            - containerPort: 3000
+          env:
+            # La contraseña viene del Secret 'grafana-admin' (creado
+            # imperativamente, NO en Git). El deployment solo lo referencia.
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin
+                  key: admin-password
+          volumeMounts:
+            # El ConfigMap del data source se monta donde Grafana busca
+            # provisioning al arrancar. Así se auto-configura Prometheus.
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: storage
+              mountPath: /var/lib/grafana
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        # Storage EFÍMERO: los dashboards creados a mano en la UI se PIERDEN si
+        # el pod muere. Es INTENCIONAL: refuerza por qué versionamos los
+        # dashboards como JSON después. No confíes en el estado de la UI.
+        - name: storage
+          emptyDir: {}

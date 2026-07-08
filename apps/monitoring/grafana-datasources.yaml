@@ -1,0 +1,22 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Provisioning del DATA SOURCE de Grafana (declarativo, no click-ops).
+# Grafana lee esto al arrancar y se auto-configura para consultar Prometheus.
+# La config vive en Git; si Grafana muere y renace, se reconfigura sola.
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy          # Grafana (el servidor) consulta a Prometheus,
+                               # no el navegador del usuario. Más seguro.
+        # DNS interno de Kubernetes: 'prometheus' resuelve al Service del mismo
+        # namespace. Sin IPs: el nombre es estable aunque los pods cambien.
+        url: http://prometheus:9090
+        isDefault: true        # data source por defecto para paneles nuevos
