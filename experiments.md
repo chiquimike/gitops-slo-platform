@@ -136,20 +136,66 @@ evidencia antes/después.
 
 ---
 
-## EXP-003 — [[siguiente experimento]]  _(plantilla)_
+## EXP-003 — Reproducibilidad de la configuración de Grafana ante destrucción del pod
 
-- **Fecha:**
-- **Fase:**
-- **Entorno:**
+- **Fecha:** 2026-07-08
+- **Fase:** 3 (Observabilidad) — sub-fase 3B (Grafana).
+- **Entorno:** k3d local, namespace `monitoring`. Grafana desplegada vía Argo CD
+  con data source y dashboard provisionados declarativamente desde ConfigMaps.
 
 ### Hipótesis
+La configuración de Grafana (data source de Prometheus y dashboard "demo-app SLI")
+es reproducible desde Git y sobrevive a la destrucción del pod, porque vive en
+ConfigMaps versionados y no en el almacenamiento efímero (emptyDir) del contenedor.
+Predicción: al eliminar el pod de Grafana, el nuevo pod se levanta con el data
+source y el dashboard intactos, sin intervención manual.
 
-### Método
+### Método (chaos aplicado a la configuración)
+1. Estado inicial: Grafana corriendo, dashboard "demo-app SLI" visible, data
+   source Prometheus provisionado y pasando "Save & test".
+2. Inyección de falla (destrucción deliberada del pod):
+   `kubectl delete pod -l app=grafana -n monitoring`
+3. Observación: esperar a que el Deployment recree el pod
+   (`kubectl get pods -n monitoring -w`).
+4. Verificación: acceder de nuevo a Grafana (port-forward) y comprobar que el
+   dashboard y el data source siguen presentes, sin reconfiguración manual.
 
 ### Resultado
+- Pod de Grafana eliminado y recreado por el Deployment: sí.
+- Dashboard "demo-app SLI" presente tras la recreación: SÍ (sobrevivió).
+- Data source Prometheus presente y funcional tras la recreación: SÍ.
+- Intervención manual requerida para restaurar la config: NINGUNA, GRACIAS A DIOS.
 
-### Interpretación
+  Resultado binario: la hipótesis se CONFIRMA. La configuración es reproducible
+  y resiliente a la pérdida del pod.
+
+### Interpretación (el "por qué")
+La configuración sobrevive porque su fuente de verdad son ConfigMaps versionados
+en Git, montados como archivos al arrancar el pod (provisioning declarativo), no
+el estado interno del contenedor. El emptyDir solo guarda datos operativos
+internos de Grafana, no la configuración. Es el mismo principio que la config de
+Prometheus vía ConfigMap: fuente externa al pod = persiste; estado local al pod =
+efímero.
+
+### Contraste (lo que habría pasado con click-ops)
+Si el dashboard se hubiera creado manualmente por la UI, habría vivido solo en el
+emptyDir y se habría PERDIDO al destruir el pod. Este experimento es la evidencia
+empírica de por qué el provisioning declarativo supera al click-ops: no es una
+preferencia estética, es una propiedad de resiliencia demostrable.
 
 ### Limitaciones / honestidad
+- Prueba en entorno local de un nodo. La resiliencia demostrada es de la
+  CONFIGURACIÓN, no de los datos de métricas (que viven en Prometheus, con su
+  propia limitación de emptyDir documentada aparte).
+- No prueba alta disponibilidad de Grafana (sigue siendo 1 réplica); prueba
+  reproducibilidad de configuración, que es una propiedad distinta.
 
 ### Evidencia
+- evidence/exp-003-dashboard-after-pod-delete.png  (dashboard visible tras
+  recrear el pod, con su título correcto y datos)
+
+### Talking point derivado
+Validé la reproducibilidad de mi observabilidad con chaos: destruí el pod de
+Grafana y el dashboard se reconstruyó solo desde ConfigMaps versionados. La
+diferencia entre provisioning declarativo y click-ops no es teórica; la probé
+matando el pod. Con click-ops, el dashboard se habría perdido.
