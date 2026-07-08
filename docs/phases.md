@@ -90,17 +90,57 @@ endpoint de falla inyectable para chaos posterior.
 
 ---
 
-## Fase 3 — Observabilidad  _(no iniciada)_
+## Fase 3 — Observabilidad _(completada)_
 
-**Objetivo:** Prometheus + Grafana desplegados vía Argo CD; un dashboard con el
-SLI real.
+**Objetivo:** desplegar Prometheus y Grafana vía Argo CD, con Prometheus
+scrapeando la app y un dashboard que muestre el SLI real.
+**Estado:** completa (3A Prometheus + 3B Grafana).
 
-> **Definición de "done" de esta fase (recordatorio):** NO es que Grafana
-> muestre gráficas. Es que exista un SLI real medido y visible. El bloque
-> central no está terminado hasta que una alerta de burn-rate dispara sola con
-> una falla inyectada (Fase 4).
+### 3A — Prometheus con service discovery
+- Prometheus desplegado a mano (Deployment + ConfigMap + RBAC + Service) en
+  namespace propio `monitoring`, vía Argo CD. Se optó por manifiestos propios
+  sobre Helm chart para entender cada pieza (observabilidad es brecha declarada).
+- RBAC con least privilege: ClusterRole (necesita descubrir targets
+  across-namespace) pero SOLO verbos de lectura (get, list, watch). Un sistema
+  de observabilidad solo observa; su blast radius se limita a lectura.
+- Modelo pull: Prometheus scrapea el /metrics de sus targets. Ventaja: la
+  disponibilidad del target es intrínseca (scrape falla = servicio caído).
+- Service discovery + relabeling: descubre todos los endpoints del clúster y los
+  filtra en cascada (namespace -> service -> puerto) con action keep, hasta
+  exactamente la FastAPI. Sin keep, se scrapearía todo el clúster (fallos
+  masivos, desperdicio, contaminación de datos).
+- Validado: target demo-app 3/3 UP, verificado en tres capas (UI targets,
+  series en Graph, cruce contra kubectl get endpoints). emptyDir para storage:
+  limitación consciente (métricas no persisten reinicio; en prod, PersistentVolume).
 
-_Se completará al arrancar la fase._
+### Incidente resuelto durante 3A
+- Detectado `argocd-applicationset-controller` en CrashLoopBackOff (139 reinicios)
+  mientras se revisaba el clúster. Causa raíz (vía logs --previous): CRD de
+  ApplicationSet ausente ("if kind is a CRD, it should be installed before
+  calling Start") — gotcha de orden de instalación de CRDs.
+- Decisión: desactivar el controller (replicas=0) por no usarse ApplicationSets,
+  aplicando minimización de superficie operativa. Reversibilidad verificada en
+  ambos sentidos. Documentado en ADR-006.
+- Lección: sesgo de confirmación. Un componente sano junto a uno en CrashLoop
+  sigue siendo un sistema degradado. Escanear TODO el estado, no solo lo buscado.
+
+### 3B — Grafana con provisioning declarativo
+- Grafana desplegada vía Argo CD. Data source (Prometheus) y dashboard
+  provisionados declarativamente desde ConfigMaps, NO por la UI (click-ops).
+- Contraseña de admin en un Secret creado imperativamente (fuera de Git); el
+  Deployment solo lo referencia. Nota: Secrets de K8s son base64, no cifrado;
+  en GitOps puro se usaría Sealed Secrets / SOPS / External Secrets.
+- DNS interno de Kubernetes: Grafana alcanza Prometheus como http://prometheus:9090
+  (mismo namespace). Los consumidores usan nombres estables, no IPs.
+- fsGroup 472 para permisos de volumen (Grafana corre no-root; emptyDir nace
+  root-owned). Cuidado con solapamiento de montajes (storage movido a subruta
+  para no tapar la carpeta de dashboards).
+- Primer panel PromQL construido a mano: rate(http_requests_total{endpoint="/api/work"}[5m]).
+  Aprendizaje: nunca graficar un Counter crudo; rate() lo convierte en req/s. La
+  ventana ([5m]) debe ser >= ~4x el scrape_interval (15s) para tener suficientes
+  puntos; [10s] rompería el cálculo.
+- Experimento asociado: EXP-003 (dashboard sobrevive a la destrucción del pod
+  porque viene de ConfigMaps versionados — reproducibilidad probada con chaos).
 
 ---
 
