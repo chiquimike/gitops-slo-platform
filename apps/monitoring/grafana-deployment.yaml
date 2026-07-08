@@ -40,14 +40,25 @@ spec:
             # provisioning al arrancar. Así se auto-configura Prometheus.
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources
+            # El PROVIDER de dashboards: le dice a Grafana dónde buscar dashboards.
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            # El JSON del dashboard, montado en la carpeta que el provider vigila.
+            - name: dashboard-demo-app
+              mountPath: /var/lib/grafana/dashboards
             - name: storage
-              mountPath: /var/lib/grafana
+              mountPath: /var/lib/grafana/data   # storage propio de Grafana (no pisa dashboards)
       volumes:
         - name: datasources
           configMap:
             name: grafana-datasources
-        # Storage EFÍMERO: los dashboards creados a mano en la UI se PIERDEN si
-        # el pod muere. Es INTENCIONAL: refuerza por qué versionamos los
-        # dashboards como JSON después. No confíes en el estado de la UI.
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboard-demo-app
+          configMap:
+            name: grafana-dashboard-demo-app
+        # Storage EFÍMERO para datos internos de Grafana. Los dashboards ya NO
+        # dependen de esto: vienen de ConfigMaps versionados (provisioning).
         - name: storage
           emptyDir: {}

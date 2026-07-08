@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# El JSON del dashboard, envuelto en un ConfigMap. Grafana lo monta como archivo
+# en la carpeta que el provider (grafana-dashboard-provider) vigila, y lo carga.
+#
+# NOTA sobre la estructura: el JSON completo va indentado bajo la clave
+# 'demo-app-sli.json'. El '|' preserva el texto tal cual (block scalar).
+# Correcciones aplicadas vs. el export crudo: "id": null y título del panel.
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-demo-app
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"   # convención: marca este CM como dashboard de Grafana
+data:
+  demo-app-sli.json: |
+    {
+      "annotations": { "list": [] },
+      "description": "Request Rate por Pod y Status",
+      "editable": true,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "panels": [
+        {
+          "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "drawStyle": "line", "lineInterpolation": "linear", "lineWidth": 1, "fillOpacity": 0, "showPoints": "auto" },
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 13, "w": 24, "x": 0, "y": 0 },
+          "id": 1,
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "single", "sort": "none" }
+          },
+          "targets": [
+            {
+              "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+              "editorMode": "code",
+              "expr": "rate(http_requests_total{endpoint=\"/api/work\"}[5m])",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Request Rate — /api/work (req/s)",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "",
+      "schemaVersion": 39,
+      "tags": [],
+      "templating": { "list": [] },
+      "time": { "from": "now-6h", "to": "now" },
+      "timezone": "browser",
+      "title": "demo-app SLI",
+      "uid": "afri52d2eyqdcc",
+      "version": 1
+    }
