@@ -1,7 +1,14 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# Recording rules — precalculan el SLI y lo guardan como métrica limpia.
+# ═══════════════════════════════════════════════════════════════════════════════════════
+# Recording rules + Alert rules del SLO de disponibilidad.
+#   - Grupo 1 (recording): precalcula el SLI en varias ventanas.
+#   - Grupo 2 (alerting):  burn-rate multi-ventana sobre el error budget.
 # Convención de nombres: nivel:métrica:operación (los ':' marcan métrica derivada).
-# ═══════════════════════════════════════════════════════════════════════════
+#
+# NOTA: VS Code puede marcar 'apiVersion' como error si aplica el schema de
+# reglas de Prometheus. Es un falso positivo: este archivo es un ConfigMap de
+# Kubernetes que CONTIENE reglas de Prometheus anidadas. La estructura es válida;
+# Prometheus carga las reglas correctamente (verificado en Status > Rules).
+# ═══════════════════════════════════════════════════════════════════════════════════════
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -10,31 +17,71 @@ metadata:
 data:
   slo_rules.yml: |
     groups:
+      # ─────────────────────────────────────────────────────────────────────
+      # GRUPO 1 — RECORDING RULES: el SLI precalculado en 4 ventanas.
+      # Ventanas cortas (5m, 1h) para la alerta Page; largas (30m, 6h) para Ticket.
+      # ─────────────────────────────────────────────────────────────────────
       - name: slo_availability
-        # interval: cada cuánto Prometheus RE-CALCULA estas reglas.
         interval: 15s
         rules:
-          # ─── SLI de disponibilidad sobre ventana de 5m ─────────────────────
-          # Proporción de requests exitosos (200) sobre el total, en /api/work.
-          # Numerador y denominador con rate() para que las unidades se cancelen
-          # y quede una proporción entre 0 y 1. sum() agrega los 3 pods.
           - record: sli:availability:ratio_5m
             expr: |
               sum(rate(http_requests_total{endpoint="/api/work", status_code="200"}[5m]))
               /
               sum(rate(http_requests_total{endpoint="/api/work"}[5m]))
 
-          # ─── El mismo SLI en otras ventanas (para burn-rate multi-ventana) ──
-          # El burn-rate alerting necesita el SLI en ventanas cortas y largas.
-          # Las precalculamos aquí para no repetir la query en las alertas.
+          - record: sli:availability:ratio_1h
+            expr: |
+              sum(rate(http_requests_total{endpoint="/api/work", status_code="200"}[1h]))
+              /
+              sum(rate(http_requests_total{endpoint="/api/work"}[1h]))
+
           - record: sli:availability:ratio_30m
             expr: |
               sum(rate(http_requests_total{endpoint="/api/work", status_code="200"}[30m]))
               /
               sum(rate(http_requests_total{endpoint="/api/work"}[30m]))
 
-          - record: sli:availability:ratio_1h
+          - record: sli:availability:ratio_6h
             expr: |
-              sum(rate(http_requests_total{endpoint="/api/work", status_code="200"}[1h]))
+              sum(rate(http_requests_total{endpoint="/api/work", status_code="200"}[6h]))
               /
-              sum(rate(http_requests_total{endpoint="/api/work"}[1h]))
+              sum(rate(http_requests_total{endpoint="/api/work"}[6h]))
+
+      # ─────────────────────────────────────────────────────────────────────
+      # GRUPO 2 — ALERT RULES: burn-rate multi-ventana.
+      # SLO = 99% de éxito. Error budget = 1% (0.01).
+      # La tasa de FALLO es (1 - SLI). Se dispara si el fallo supera
+      # burn_rate * error_budget en AMBAS ventanas simultáneamente.
+      # ─────────────────────────────────────────────────────────────────────
+      - name: slo_burn_rate_alerts
+        rules:
+          # ─── ALERTA PAGE (urgente): burn rate 14.4x ───────────────────────
+          # Agota el budget del mes en ~2 días. Ventanas CORTAS (5m Y 1h):
+          # detección rápida de una quema violenta. Ambas deben cumplirse.
+          - alert: SLOBurnRateHigh
+            expr: |
+              (1 - sli:availability:ratio_5m) > (14.4 * 0.01)
+              and
+              (1 - sli:availability:ratio_1h) > (14.4 * 0.01)
+            for: 2m       # debe sostenerse 2m (Pending -> Firing) para evitar parpadeos
+            labels:
+              severity: page
+            annotations:
+              summary: "Quema rápida de error budget en demo-app (/api/work)"
+              description: "Burn rate > 14.4x en ventanas 5m y 1h. A este ritmo el budget mensual se agota en ~2 días."
+
+          # ─── ALERTA TICKET (menos urgente): burn rate 3x ──────────────────
+          # Agota el budget del mes en ~10 días. Ventanas LARGAS (30m Y 6h):
+          # una fuga lenta solo emerge del ruido observando más tiempo.
+          - alert: SLOBurnRateSlow
+            expr: |
+              (1 - sli:availability:ratio_30m) > (3 * 0.01)
+              and
+              (1 - sli:availability:ratio_6h) > (3 * 0.01)
+            for: 15m      # fuga lenta: se confirma con más tiempo, sin urgencia
+            labels:
+              severity: ticket
+            annotations:
+              summary: "Fuga lenta de error budget en demo-app (/api/work)"
+              description: "Burn rate > 3x en ventanas 30m y 6h. A este ritmo el budget mensual se agota en ~10 días."
