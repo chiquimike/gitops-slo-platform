@@ -144,12 +144,63 @@ scrapeando la app y un dashboard que muestre el SLI real.
 
 ---
 
-## Fase 4 — SLO + burn-rate alerting  _(no iniciada)_
+## Fase 4 — SLO + Burn-rate Alerting _(completada)_
 
-**Objetivo:** SLO formal definido, alertas basadas en consumo de error budget.
-El corazón del proyecto.
+**Objetivo:** definir un SLO formal con error budget y alertar sobre el consumo
+del presupuesto (burn-rate), no sobre umbrales de infraestructura.
+**Estado:** completa. El corazón SRE del proyecto.
 
-_Se completará al arrancar la fase._
+### Definición del SLI y el SLO
+- SLI de disponibilidad definido como proporción de eventos buenos sobre totales:
+  requests exitosos (200) a /api/work / requests totales a /api/work. Mide la
+  EXPERIENCIA DEL USUARIO, no la salud de la infraestructura (un pod "healthy"
+  puede devolver 500s; el SLI mide lo que el usuario siente).
+- SLO elegido: 99% de disponibilidad sobre ventana de 30 días. Decisión razonada
+  como objetivo iterativo (empezar conservador, ajustar con datos). El 99%
+  permite ~7.2h de caída/mes, margen holgado para experimentar; cada nueve
+  adicional reduce el margen 10x y multiplica el costo.
+- Error budget = 1%. Concepto clave: el budget se consume con FALLOS, no con
+  tráfico exitoso. El margen no usado es "licencia para arriesgar" (deploys,
+  chaos); cuando se agota, se congela el cambio y se estabiliza.
+
+### Recording rules (SLI precalculado)
+- El SLI se encapsuló en recording rules (convención nivel:métrica:operación,
+  ej. sli:availability:ratio_5m) en 4 ventanas (5m, 1h, 30m, 6h). Ventajas:
+  legibilidad (nombre corto vs. query larga) y rendimiento (precálculo por
+  intervalo). Las ventanas cortas alimentan la alerta Page; las largas, la Ticket.
+- PromQL: uso de rate() en numerador y denominador para que las unidades se
+  cancelen y quede una proporción 0-1; sum() para agregar los 3 pods en un SLI
+  de servicio único. Nunca graficar un Counter crudo.
+
+### Burn-rate alerting multi-ventana (SRE Workbook de Google)
+- Dos alertas por severidad:
+  - SLOBurnRateHigh (page): burn rate 14.4x, ventanas 5m Y 1h, for 2m. Agota el
+    budget mensual en ~2 días. Detección rápida de quema violenta.
+  - SLOBurnRateSlow (ticket): burn rate 3x, ventanas 30m Y 6h, for 15m. Agota el
+    budget en ~10 días. Fuga lenta que solo emerge del ruido en ventanas largas.
+- Diseño anti-ruido: cada alerta exige que AMBAS ventanas superen el umbral. Un
+  pico efímero mueve la ventana corta pero no la larga -> no dispara. El campo
+  `for` añade confirmación temporal (Pending -> Firing) contra parpadeos.
+
+### Gotchas y aprendizajes de la fase
+- Falso positivo del editor: el ConfigMap con reglas de Prometheus marca error de
+  schema en VS Code (aplica schema de reglas puras a un ConfigMap). Estructura
+  válida; Prometheus carga las reglas (verificado en Status > Rules).
+- Prometheus NO recarga reglas automáticamente al cambiar el ConfigMap: las lee
+  al arrancar. Fix elegido: recrear el pod (vs. /-/reload o config-reloader
+  sidecar, que el kube-prometheus-stack abstrae). Elección razonada por alcance.
+- Port-forward muere al recrear el pod: primer uso en vivo del runbook de
+  diagnóstico en capas (docs/runbooks/).
+
+### Experimento asociado
+- EXP-004 (evidencia estrella): chaos al 50% -> SLI degradado -> burn rate 14.4x
+  superado -> SLOBurnRateHigh en FIRING (Value 0.486). Ambas alertas (Page y
+  Ticket) activas. Toda la cadena SRE validada de punta a punta.
+
+### Limitación consciente
+- Las alertas disparan en Prometheus pero NO se enrutan a un destino (Slack,
+  email): eso es trabajo de Alertmanager, no desplegado (decisión de alcance).
+  Ver el estado Firing en la UI demuestra el mecanismo de burn-rate.
 
 ---
 

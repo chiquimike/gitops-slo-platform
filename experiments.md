@@ -199,3 +199,65 @@ Validé la reproducibilidad de mi observabilidad con chaos: destruí el pod de
 Grafana y el dashboard se reconstruyó solo desde ConfigMaps versionados. La
 diferencia entre provisioning declarativo y click-ops no es teórica; la probé
 matando el pod. Con click-ops, el dashboard se habría perdido.
+
+---
+
+## EXP-004 — Burn-rate alerting: detección de violación de SLO vía chaos
+
+- **Fecha:** 2026-07-09
+- **Fase:** 4 (SLO + burn-rate alerting).
+- **Entorno:** k3d local. Prometheus con recording rules (SLI multi-ventana) y
+  alert rules de burn-rate. SLO de disponibilidad = 99%, error budget = 1%.
+
+### Hipótesis
+Un fallo sostenido que consuma error budget a más de 14.4x el ritmo permitido
+disparará la alerta Page (SLOBurnRateHigh) cuando la tasa de fallo supere el
+umbral en AMBAS ventanas (5m y 1h) durante el periodo `for: 2m`, siguiendo la
+metodología burn-rate multi-ventana del SRE Workbook de Google.
+
+### Método (chaos + observación de la transición de estados)
+1. Estado inicial: alertas en `Inactive`, servicio sano.
+2. Inyección de fallo masivo: `curl -X POST ".../chaos?fail_rate=0.5"` (50%).
+3. Tráfico sostenido ~6-7 min para llenar las ventanas de scrape con fallos.
+4. Observación de la pestaña Alerts: transición Inactive -> Pending -> Firing.
+5. Apagado del caos (fail_rate=0) y observación del retorno a Inactive.
+
+### Resultado
+- Tasa de fallo medida (Value de la alerta): 0.486 (48.6% de fallos).
+- Umbral de disparo: (1 - SLI) > 14.4 * 0.01 = 0.144. Superado ampliamente.
+- SLOBurnRateHigh (severity=page): alcanzó estado FIRING.
+  Active since: 2026-07-09T18:46:21Z.
+- SLOBurnRateSlow (severity=ticket): también activa (50% > umbral de 3x).
+- Al apagar el caos, las alertas retornaron a Inactive conforme las ventanas
+  se limpiaron de fallos.
+
+### Interpretación (el "por qué")
+El 48.6% de fallos superó por mucho el umbral de burn-rate de la Page (14.4x el
+budget), disparando en las ventanas cortas (5m y 1h). Ambas alertas (Page y
+Ticket) se activaron porque un fallo del 50% excede tanto el umbral de 14.4x
+como el de 3x. El `for: 2m` retuvo la alerta en Pending hasta confirmar que la
+condición era sostenida, evitando disparos por parpadeo. La cadena completa
+funcionó: chaos -> SLI degradado -> error budget quemándose -> alerta Firing.
+
+### Limitaciones / honestidad
+- Prometheus con historia corta (pod recién recreado): la ventana de 1h tenía
+  poca profundidad; con más historia, el comportamiento de la ventana larga
+  sería más representativo.
+- Las alertas DISPARAN en Prometheus pero NO se enrutan a ningún destino: eso es
+  trabajo de Alertmanager, no desplegado (decisión de alcance). Ver estado
+  Firing en la UI es suficiente para demostrar el mecanismo de burn-rate.
+- Entorno local de un nodo, sin carga concurrente real.
+
+### Evidencia
+- evidence/exp-004-slo-burnrate-firing.png  (SLOBurnRateHigh en FIRING, Value 0.486)
+- evidence/exp-004-both-alerts-active.png    (Page y Ticket ambas activas)
+
+### Talking point derivado
+Implementé burn-rate alerting multi-ventana sobre un SLO del 99%. Lo validé con
+chaos: inyecté 50% de fallos y observé la alerta pasar de Inactive a Pending a
+Firing cuando el burn rate superó 14.4x el error budget en las ventanas 5m y 1h.
+No alerto sobre umbrales de infraestructura sino sobre consumo de error budget,
+la metodología del SRE Workbook de Google, que elimina el ruido de los umbrales
+estáticos. El enrutamiento a un canal real sería trabajo de Alertmanager.
+
+
