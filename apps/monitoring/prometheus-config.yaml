@@ -12,7 +12,13 @@ data:
     # ─── Configuración global ──────────────────────────────────────────────
     global:
       scrape_interval: 15s      # cada cuánto Prometheus jala métricas de cada target
-      evaluation_interval: 15s  # cada cuánto evalúa reglas de alerta (Fase 4)
+      evaluation_interval: 15s  # cada cuánto evalúa las reglas (recording y alertas)
+
+    # ─── Archivos de reglas (recording rules y, después, alert rules) ──────
+    # Prometheus carga y evalúa las reglas definidas en estos archivos.
+    # El path es donde montamos el ConfigMap prometheus-rules en el pod.
+    rule_files:
+      - /etc/prometheus/rules/*.yml
 
     # ─── Jobs de scrape: QUÉ scrapear ──────────────────────────────────────
     scrape_configs:

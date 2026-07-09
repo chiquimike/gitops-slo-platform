@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Recording rules — precalculan el SLI y lo guardan como métrica limpia.
+# Convención de nombres: nivel:métrica:operación (los ':' marcan métrica derivada).
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+data:
+  slo_rules.yml: |
+    groups:
+      - name: slo_availability
+        # interval: cada cuánto Prometheus RE-CALCULA estas reglas.
+        interval: 15s
+        rules:
+          # ─── SLI de disponibilidad sobre ventana de 5m ─────────────────────
+          # Proporción de requests exitosos (200) sobre el total, en /api/work.
+          # Numerador y denominador con rate() para que las unidades se cancelen
+          # y quede una proporción entre 0 y 1. sum() agrega los 3 pods.
+          - record: sli:availability:ratio_5m
+            expr: |
+              sum(rate(http_requests_total{endpoint="/api/work", status_code="200"}[5m]))
+              /
+              sum(rate(http_requests_total{endpoint="/api/work"}[5m]))
+
+          # ─── El mismo SLI en otras ventanas (para burn-rate multi-ventana) ──
+          # El burn-rate alerting necesita el SLI en ventanas cortas y largas.
+          # Las precalculamos aquí para no repetir la query en las alertas.
+          - record: sli:availability:ratio_30m
+            expr: |
+              sum(rate(http_requests_total{endpoint="/api/work", status_code="200"}[30m]))
+              /
+              sum(rate(http_requests_total{endpoint="/api/work"}[30m]))
+
+          - record: sli:availability:ratio_1h
+            expr: |
+              sum(rate(http_requests_total{endpoint="/api/work", status_code="200"}[1h]))
+              /
+              sum(rate(http_requests_total{endpoint="/api/work"}[1h]))

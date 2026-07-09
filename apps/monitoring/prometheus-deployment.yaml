@@ -37,6 +37,9 @@ spec:
           volumeMounts:
             - name: config-volume
               mountPath: /etc/prometheus   # el ConfigMap aparece como archivos aquí
+            # Las recording rules, montadas donde rule_files las busca.
+            - name: rules-volume
+              mountPath: /etc/prometheus/rules
             - name: storage-volume
               mountPath: /prometheus        # almacenamiento de las métricas
 
@@ -47,6 +50,11 @@ spec:
         - name: config-volume
           configMap:
             name: prometheus-config
+
+        # El ConfigMap con las recording rules (slo_rules.yml).
+        - name: rules-volume
+          configMap:
+            name: prometheus-rules
 
         # Almacenamiento EFÍMERO (emptyDir): las métricas se PIERDEN si el pod
         # muere. Aceptable para aprender; en producción sería un PersistentVolume.
