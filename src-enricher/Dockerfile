@@ -6,14 +6,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Crear el usuario no-root ANTES de copiar, para poder asignarle propiedad.
+RUN useradd --create-home --uid 1000 appuser
+
 # Cache de capas: dependencias antes que el código.
-COPY requirements.txt .
+# --chown=appuser: los archivos quedan propiedad del usuario no-root, para que
+# pueda LEERLOS cuando la app corre como appuser (evita PermissionError).
+COPY --chown=appuser:appuser requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
+COPY --chown=appuser:appuser main.py .
 
-# Usuario no-root (seguridad).
-RUN useradd --create-home --uid 1000 appuser
+# Cambiar al usuario no-root (seguridad) DESPUÉS de tener todo en su sitio.
 USER appuser
 
 EXPOSE 8000
