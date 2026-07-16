@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Deployment + Service del incident-enricher (5A: webhook receiver mínimo).
+# Vive en 'monitoring' porque es parte de la plataforma que observa, no la app.
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: incident-enricher
+  namespace: monitoring
+  labels: { app: incident-enricher }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: incident-enricher }
+  template:
+    metadata:
+      labels: { app: incident-enricher }
+    spec:
+      containers:
+        - name: incident-enricher
+          image: incident-enricher:0.1.0
+          imagePullPolicy: IfNotPresent   # usa la imagen importada a k3d (no registry)
+          ports:
+            - containerPort: 8000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: incident-enricher
+  namespace: monitoring
+  labels: { app: incident-enricher }
+spec:
+  selector:
+    app: incident-enricher
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP   # interno: Alertmanager lo alcanza por DNS interno

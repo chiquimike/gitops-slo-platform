@@ -14,11 +14,22 @@ data:
       scrape_interval: 15s      # cada cuánto Prometheus jala métricas de cada target
       evaluation_interval: 15s  # cada cuánto evalúa las reglas (recording y alertas)
 
-    # ─── Archivos de reglas (recording rules y, después, alert rules) ──────
+    # ─── Archivos de reglas (recording rules y alert rules) ────────────────
     # Prometheus carga y evalúa las reglas definidas en estos archivos.
     # El path es donde montamos el ConfigMap prometheus-rules en el pod.
     rule_files:
       - /etc/prometheus/rules/*.yml
+
+    # ─── Alerting: a dónde ENVÍA Prometheus las alertas que disparan ────────
+    # Prometheus evalúa las alert rules; cuando una dispara, la manda a
+    # Alertmanager, que decide el enrutamiento. Sin este bloque, las alertas
+    # disparan pero no salen de la UI de Prometheus (estado de Fase 4).
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+                # DNS interno: Alertmanager en el mismo namespace, puerto 9093.
+                - 'alertmanager.monitoring.svc.cluster.local:9093'
 
     # ─── Jobs de scrape: QUÉ scrapear ──────────────────────────────────────
     scrape_configs:

@@ -1,0 +1,70 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Alertmanager (5A): enruta las alertas de Prometheus a receptores.
+# Aquí: un receptor webhook que hace POST al incident-enricher.
+# ═══════════════════════════════════════════════════════════════════════════
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+data:
+  alertmanager.yml: |
+    route:
+      # Agrupa alertas por nombre para no inundar con duplicados.
+      group_by: ['alertname']
+      group_wait: 10s          # espera breve para agrupar alertas que llegan juntas
+      group_interval: 30s      # cada cuánto manda updates de un grupo existente
+      repeat_interval: 2h      # cada cuánto re-notifica una alerta que sigue activa
+      receiver: 'enricher-webhook'   # el receptor por defecto
+
+    receivers:
+      - name: 'enricher-webhook'
+        webhook_configs:
+          # DNS interno de Kubernetes: Alertmanager alcanza el enricher por su
+          # Service en el mismo namespace. El path /alert es el endpoint FastAPI.
+          - url: 'http://incident-enricher.monitoring.svc.cluster.local:8000/alert'
+            send_resolved: true   # también notifica cuando la alerta se resuelve
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  labels: { app: alertmanager }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: alertmanager }
+  template:
+    metadata:
+      labels: { app: alertmanager }
+    spec:
+      containers:
+        - name: alertmanager
+          image: prom/alertmanager:v0.27.0   # versión pineada
+          args:
+            - "--config.file=/etc/alertmanager/alertmanager.yml"
+          ports:
+            - containerPort: 9093
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/alertmanager
+      volumes:
+        - name: config-volume
+          configMap:
+            name: alertmanager-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: monitoring
+  labels: { app: alertmanager }
+spec:
+  selector:
+    app: alertmanager
+  ports:
+    - name: http
+      port: 9093
+      targetPort: 9093
+  type: ClusterIP
