@@ -1,5 +1,7 @@
 # Dependencias del incident-enricher. Versiones pineadas (reproducibilidad).
-# Por ahora solo FastAPI + uvicorn. En 5C se añadirá el cliente del LLM.
+# httpx: cliente HTTP async, para consultar la API de Prometheus sin bloquear
+# el event loop de FastAPI. En 5C se añadirá el cliente del LLM.
 
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
+httpx==0.28.1

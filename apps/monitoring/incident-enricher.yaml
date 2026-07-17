@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: incident-enricher
-          image: incident-enricher:0.1.0
+          image: incident-enricher:0.2.0   # 5B: recolección de contexto + plantilla
           imagePullPolicy: IfNotPresent   # usa la imagen importada a k3d (no registry)
           ports:
             - containerPort: 8000
