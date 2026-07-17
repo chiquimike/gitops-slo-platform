@@ -204,12 +204,50 @@ del presupuesto (burn-rate), no sobre umbrales de infraestructura.
 
 ---
 
-## Fase 5 — Experimentos y evidencia  _(no iniciada)_
+## Fase 5 — AIOps / Incident Enrichment
 
-**Objetivo:** correr carga (k6/vegeta) + chaos, medir antes/después, capturar
-evidencia para los números del CV.
+> **Nota de roadmap:** El plan original contemplaba 7 fases. Tras completar el
+> núcleo (Fases 1-4), se reevaluó el roadmap: los objetivos de la antigua Fase 5
+> (validación bajo estrés) ya se cumplieron de forma distribuida en EXP-002 y
+> EXP-004. Se priorizó la capa de AIOps sobre la de Terraform/GCS (ahora Fase 6,
+> planificada) por su mayor valor diferenciador. Un roadmap es una hipótesis que
+> se ajusta con evidencia, no un contrato inmutable.
 
-_Se completará al arrancar la fase._
+**Objetivo:** enriquecer incidentes de forma responsable — un baseline
+determinista primero, y un LLM que narra sobre datos ya verificados después,
+midiendo si el LLM se justifica sobre el baseline.
+**Estado:** en construcción (5A completo).
+
+### Decisión de diseño: por qué un LLM aquí (y dónde NO)
+- El enriquecimiento se resuelve ~70% con una plantilla determinista. El LLM se
+  incluye por el 30% restante: sintetizar la correlación de señales en narrativa
+  accionable. Distinción clave: el CÓDIGO correlaciona de forma determinista
+  (aritmética de timestamps); el LLM solo COMUNICA esa correlación en lenguaje
+  natural. Si se quita el LLM, el sistema sigue sabiendo qué deploy coincide con
+  la caída — solo pierde la narrativa legible.
+- El LLM nunca decide, diagnostica de logs crudos, ni afirma causalidad absoluta.
+  Parte de hechos pre-verificados por el clúster y sugiere el sospechoso probable.
+
+### 5A — Infraestructura de trigger (Alertmanager + webhook receiver)
+- Desplegado **Alertmanager** (la pieza que se dejó pendiente conscientemente en
+  Fase 4) vía Argo CD, con un receptor tipo webhook.
+- Construido el **incident-enricher**: servicio FastAPI SEPARADO del demo-app
+  (el demo-app es la app observada; el enricher es parte de la plataforma que
+  observa — responsabilidades distintas). Por ahora solo recibe y loguea.
+- Conectado Prometheus -> Alertmanager (bloque `alerting:` en la config) y
+  Alertmanager -> enricher (webhook vía DNS interno de Kubernetes).
+- Gotcha resuelto: el Dockerfile copiaba archivos como root y luego cambiaba a
+  usuario no-root, causando PermissionError al leer main.py. Fix: `COPY --chown`
+  para asignar propiedad al usuario no-root sin sacrificar la práctica de seguridad.
+- **Hito validado:** una alerta de burn-rate (SLOBurnRateSlow) recorrió la cadena
+  completa Prometheus -> Alertmanager -> enricher, con el payload estructurado
+  (labels, annotations, startsAt/endsAt) aterrizando en los logs del servicio.
+  Verificado también el ciclo `resolved` (send_resolved: true).
+  Evidencia: evidence/5a-webhook-firing.png, evidence/5a-webhook-resolved.png
+
+### 5B — Recolección determinista de contexto + plantilla  _(siguiente)_
+### 5C — Capa LLM + EXP-005 (comparación baseline vs LLM)  _(pendiente)_
+
 
 ---
 
@@ -221,11 +259,3 @@ backup de snapshots.
 _Se completará al arrancar la fase._
 
 ---
-
-## Fase 7 — Capa de IA / enriquecimiento de incidentes  _(opcional, no iniciada)_
-
-**Objetivo:** servicio que genera borradores de narrativa de incidente a partir
-de telemetría estructurada + historial de deploys. Solo tras validar que la
-correlación de alertas se resuelve de forma determinista.
-
-_Se completará al arrancar la fase._

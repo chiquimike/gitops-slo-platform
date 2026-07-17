@@ -143,9 +143,52 @@ plataforma.
 
 ---
 
+## ADR-007 — Reordenamiento del roadmap tras completar el núcleo
+
+**Contexto:** El plan original del proyecto contemplaba 7 fases:
+1) Sustrato GitOps, 2) FastAPI instrumentada, 3) Observabilidad, 4) SLO +
+burn-rate alerting, 5) Experimentos de carga formales, 6) Terraform + GCS,
+7) Capa IA/AIOps. Tras completar el núcleo (Fases 1-4), se reevaluó el roadmap
+antes de continuar.
+
+**Decisión:** Reorganizar las fases restantes de la siguiente forma:
+- La antigua **Fase 5 (experimentos de carga formales)** se considera CUBIERTA:
+  sus objetivos —validar el sistema bajo estrés con evidencia medida— ya se
+  cumplieron de forma distribuida en EXP-002 (chaos degradando el SLI) y EXP-004
+  (carga sostenida disparando el burn-rate). No se crea una fase separada
+  redundante.
+- La antigua **Fase 7 (IA/AIOps)** pasa a ser la nueva **Fase 5**, y se prioriza
+  para ejecutarse a continuación.
+- La antigua **Fase 6 (Terraform + GCS)** se mantiene como **Fase 6**,
+  planificada como trabajo futuro.
+
+**Por qué priorizar AIOps (nueva Fase 5) sobre Terraform/GCS (Fase 6):**
+- La capa de IA/AIOps es el diferenciador declarado para el mercado objetivo:
+  demostrar orquestación responsable de IA, no solo operación manual de infra.
+- Ya se cuenta con la telemetría real (SLI, burn-rate, alertas) necesaria para
+  montar el enriquecimiento de incidentes sobre datos verificados. La base
+  existe; es el momento de construir encima.
+- Terraform/GCS es valioso (cubre la brecha de nube) pero más incremental y menos
+  diferenciador; se difiere sin perder valor.
+
+**Tradeoff reconocido:** el roadmap ya no es secuencial 1-2-3...; hay un
+reordenamiento explícito. Se acepta porque un roadmap es una hipótesis que se
+ajusta con evidencia, no un contrato inmutable. La numeración se mantiene sin
+huecos (5 = IA, 6 = Terraform) para legibilidad, con esta trazabilidad del cambio.
+
+**Talking point:** "Reevalué mi roadmap tras completar el núcleo en vez de
+seguirlo rígidamente: verifiqué que los objetivos de validación bajo estrés ya
+se habían cumplido en experimentos previos, y prioricé la capa de mayor valor
+diferenciador con la evidencia de que la base ya existía. Gestionar prioridades
+con criterio, y documentar el porqué del cambio, es parte de operar como
+ingeniero, no solo ejecutar un plan."
+
+---
+
 ## Pendientes de decisión (a documentar cuando se aborden)
 
-- **ADR-007** — Estrategia de burn-rate alerting (ventanas múltiples) vs.
-  umbrales estáticos.
 - **ADR-008** — Decisión sobre la capa de IA: qué se resuelve con reglas
   deterministas y qué justifica un LLM (enriquecimiento de incidentes).
+- **ADR-009** — Estrategia de burn-rate alerting (ventanas múltiples) vs.
+  umbrales estáticos.
+

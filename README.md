@@ -44,8 +44,8 @@ stack describe la arquitectura objetivo.
 |--------------------|-------------------------------------|-------------------|
 | Kubernetes local   | k3d (envuelve k3s)                  | Operativo         |
 | GitOps             | Argo CD                             | Operativo         |
-| App de demo        | FastAPI (Python) instrumentada      | En construcción   |
-| Observabilidad     | Prometheus + Grafana + Alertmanager | Planeado          |
+| App de demo        | FastAPI (Python) instrumentada      | Operativo         |
+| Observabilidad     | Prometheus + Grafana + Alertmanager | Operativo         |
 | SLO alerting       | Prometheus burn-rate rules          | Planeado          |
 | Estado durable     | Google Cloud Storage (GCS)          | Planeado          |
 | IaC                | Terraform (backend remoto en GCS)   | Planeado          |
