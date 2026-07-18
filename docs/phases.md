@@ -245,7 +245,50 @@ midiendo si el LLM se justifica sobre el baseline.
   Verificado también el ciclo `resolved` (send_resolved: true).
   Evidencia: evidence/5a-webhook-firing.png, evidence/5a-webhook-resolved.png
 
-### 5B — Recolección determinista de contexto + plantilla  _(siguiente)_
+### 5B — Recolección determinista de contexto + plantilla baseline
+
+**Objetivo:** que el enricher deje de solo loguear y RECOLECTE contexto de otras
+fuentes, armando un resumen de incidente con plantilla determinista (cero LLM).
+Este es el BASELINE contra el que se medirá el LLM en 5C.
+
+**Primer incremento — integración con Prometheus (completado):**
+- El enricher consulta la API HTTP de Prometheus
+  (`GET /api/v1/query?query=sli:availability:ratio_5m`) para obtener el valor
+  actual del SLI en vivo — lectura programática de métricas, no vía UI.
+- Cálculo determinista de la duración del incidente por aritmética de los
+  timestamps `startsAt`/`endsAt` del webhook (con manejo del caso "firing", donde
+  Alertmanager usa año 0001 como "sin fin" -> se mide hasta ahora).
+- Plantilla determinista que YUXTAPONE los datos estructurados (alerta,
+  severidad, estado, duración, SLI, resumen, detalle) en un resumen legible.
+  Deliberadamente NO narra ni correlaciona — esa síntesis es lo que el LLM
+  añadirá en 5C. El baseline se hizo genuinamente bueno para que la comparación
+  de EXP-005 sea honesta.
+
+**Decisiones de diseño:**
+- **httpx (async)** sobre requests: no bloquea el event loop de FastAPI mientras
+  espera a Prometheus.
+- **Degradación con gracia:** si Prometheus no responde o devuelve vacío, el
+  enricher NO se cae — loguea WARNING, marca el SLI como "no disponible" y entrega
+  el resumen con el resto del contexto. Un servicio que se activa DURANTE
+  incidentes no puede depender de que todas sus fuentes estén sanas (el incidente
+  mismo puede ser la causa del fallo de una fuente).
+- **URL de Prometheus como variable de entorno** (no hardcodeada), con default al
+  DNS interno.
+- **Tag de imagen versionado** (0.1.0 -> 0.2.0): reusar un tag mutable causa que
+  Kubernetes sirva una versión cacheada; un tag nuevo fuerza redespliegue limpio.
+
+**Hito validado (ambos caminos):**
+- Camino feliz: alerta SLOBurnRateHigh, SLI recolectado de Prometheus = 49.5%
+  (coincide con el 50% de fallos inyectados). Resumen ensamblado correctamente.
+  Evidencia: evidence/5b-baseline-summary.png
+- Camino degradado: Prometheus devuelve resultado vacío -> SLI "no disponible",
+  pero el enricher entrega el resumen igual sin caerse (degradación con gracia
+  probada en vivo). Evidencia: evidence/5b-graceful-degradation.png
+
+**Segundo incremento — integración con Argo CD (siguiente):** consultar la API de
+Argo para incorporar "qué se desplegó recientemente", habilitando la correlación
+temporal deploy <-> caída del SLI que el LLM narrará en 5C.
+
 ### 5C — Capa LLM + EXP-005 (comparación baseline vs LLM)  _(pendiente)_
 
 
