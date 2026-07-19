@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: incident-enricher
-          image: incident-enricher:0.3.1   # fix NaN del SLI
+          image: incident-enricher:0.4.0   # 5C: capa LLM (Gemini)
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
@@ -24,6 +24,12 @@ spec:
                 secretKeyRef:
                   name: argocd-enricher-token
                   key: token
+            # API key de Gemini, inyectada desde su Secret (fuera de Git).
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gemini-api-key
+                  key: api-key
           livenessProbe:
             httpGet:
               path: /healthz
