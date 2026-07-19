@@ -1,16 +1,15 @@
 """
 incident-enricher — servicio de enriquecimiento de incidentes.
 
-FASE 5C: añade la capa LLM (Gemini) sobre el baseline determinista.
-El resumen final tiene DOS partes (Opción B — conviven):
-  1. BASELINE determinista: hechos estructurados (siempre confiable).
-  2. NARRATIVA LLM: síntesis legible de la correlación, ENCIMA de los hechos.
+FASE 5C: capa LLM sobre el baseline determinista (Opción B — conviven).
+Proveedor: Groq (API compatible con formato OpenAI). Elegido por free tier real
+y baja latencia; el proveedor está aislado en generate_llm_narrative(), así que
+cambiarlo no afecta al resto del sistema (bajo acoplamiento).
 
-Frontera de responsabilidad (crítica): el CÓDIGO ya correlacionó de forma
-determinista (tiene SLI, deploy, timestamps). El LLM SOLO narra esa correlación
-ya calculada — el prompt lo restringe a no inventar causas, no afirmar causalidad
-absoluta, y hablar de "sospechoso probable", no "causa confirmada".
-Si Gemini falla, el ingeniero recibe igual el baseline determinista (degradación).
+Frontera: el CÓDIGO correlaciona de forma determinista; el LLM SOLO narra esa
+correlación ya calculada. El prompt lo restringe (no inventar causas, no afirmar
+causalidad absoluta, "sospechoso probable" no "causa confirmada").
+Si el LLM falla, el ingeniero recibe igual el baseline determinista.
 """
 
 import json
@@ -24,7 +23,7 @@ from fastapi import FastAPI, Request
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("incident-enricher")
 
-app = FastAPI(title="incident-enricher", version="0.4.0")
+app = FastAPI(title="incident-enricher", version="0.4.1")
 
 # --- Configuración -----------------------------------------------------------
 PROMETHEUS_URL = os.getenv(
@@ -32,8 +31,8 @@ PROMETHEUS_URL = os.getenv(
 )
 ARGOCD_URL = os.getenv("ARGOCD_URL", "https://argocd-server.argocd.svc.cluster.local")
 ARGOCD_TOKEN = os.getenv("ARGOCD_TOKEN", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 SLI_QUERY = "sli:availability:ratio_5m"
 
@@ -108,8 +107,6 @@ def compute_duration(starts_at: str, ends_at: str) -> str:
 
 
 def build_context(alert: dict, sli_value: float | None, deploy: dict | None) -> dict:
-    """Recolecta el contexto estructurado UNA vez. Ambas salidas (baseline y LLM)
-    parten de este mismo dict — garantiza que EXP-005 compare sobre igual input."""
     labels = alert.get("labels", {})
     annotations = alert.get("annotations", {})
     return {
@@ -128,7 +125,6 @@ def build_context(alert: dict, sli_value: float | None, deploy: dict | None) -> 
 
 
 def build_deterministic_summary(ctx: dict) -> str:
-    """PARTE 1 — baseline determinista. Yuxtapone hechos. Siempre confiable."""
     return (
         f"────────── RESUMEN DE INCIDENTE (baseline determinista) ──────────\n"
         f"Alerta:        {ctx['alertname']}  [{ctx['severity'].upper()}]\n"
@@ -142,7 +138,6 @@ def build_deterministic_summary(ctx: dict) -> str:
     )
 
 
-# El prompt restringido: codifica la FRONTERA de responsabilidad del LLM.
 LLM_SYSTEM_INSTRUCTION = (
     "Eres un asistente de SRE que redacta un resumen breve de incidente para un "
     "ingeniero de guardia. Recibes DATOS YA VERIFICADOS por el sistema de "
@@ -157,10 +152,14 @@ LLM_SYSTEM_INSTRUCTION = (
 
 
 async def generate_llm_narrative(ctx: dict) -> str | None:
-    """PARTE 2 — narrativa del LLM (Gemini). None si falla (degradación con gracia:
-    el ingeniero recibe igual el baseline determinista)."""
-    if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY no configurada; se omite narrativa LLM")
+    """
+    PARTE 2 — narrativa del LLM vía Groq (API compatible con formato OpenAI).
+    ESTA es la ÚNICA función que cambia al cambiar de proveedor: el resto del
+    sistema no depende de qué LLM se use. Bajo acoplamiento en acción.
+    None si falla (degradación con gracia).
+    """
+    if not GROQ_API_KEY:
+        logger.warning("GROQ_API_KEY no configurada; se omite narrativa LLM")
         return None
 
     user_context = (
@@ -173,33 +172,36 @@ async def generate_llm_narrative(ctx: dict) -> str | None:
         f"Redacta el resumen para el ingeniero de guardia."
     )
 
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    )
+    # Formato OpenAI-compatible: mensajes con roles system y user.
     body = {
-        "system_instruction": {"parts": [{"text": LLM_SYSTEM_INSTRUCTION}]},
-        "contents": [{"parts": [{"text": user_context}]}],
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": LLM_SYSTEM_INSTRUCTION},
+            {"role": "user", "content": user_context},
+        ],
+        "temperature": 0.3,  # bajo: queremos consistencia, no creatividad
     }
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, json=body)
+            resp = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                json=body, headers=headers,
+            )
             resp.raise_for_status()
             data = resp.json()
-        # Extrae el texto de la respuesta de Gemini.
-        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        return data["choices"][0]["message"]["content"].strip()
     except (httpx.HTTPError, KeyError, IndexError) as e:
         logger.warning("No se pudo generar la narrativa LLM: %s", e)
         return None
 
 
 def build_combined_report(baseline: str, narrative: str | None) -> str:
-    """Ensambla el reporte final: baseline (hechos) + narrativa LLM (encima)."""
     if narrative:
         llm_block = (
-            f"\n╔══════════ NARRATIVA (LLM — Gemini) ══════════╗\n"
+            f"\n╔══════════ NARRATIVA (LLM — Groq) ══════════╗\n"
             f"{narrative}\n"
-            f"╚══════════════════════════════════════════════╝"
+            f"╚═════════════════════════════════════════════╝"
         )
     else:
         llm_block = (
@@ -214,15 +216,11 @@ async def receive_alert(request: Request):
     payload = await request.json()
     alerts = payload.get("alerts", [])
     logger.info("=== Webhook recibido: %d alerta(s) ===", len(alerts))
-
     sli_value = await query_prometheus_sli()
     deploy = await query_argocd_last_deploy()
-
     for alert in alerts:
-        ctx = build_context(alert, sli_value, deploy)          # contexto único
-        baseline = build_deterministic_summary(ctx)            # parte 1
-        narrative = await generate_llm_narrative(ctx)          # parte 2
-        report = build_combined_report(baseline, narrative)
-        logger.info("\n%s", report)
-
+        ctx = build_context(alert, sli_value, deploy)
+        baseline = build_deterministic_summary(ctx)
+        narrative = await generate_llm_narrative(ctx)
+        logger.info("\n%s", build_combined_report(baseline, narrative))
     return {"received": len(alerts)}
