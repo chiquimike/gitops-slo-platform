@@ -1,5 +1,6 @@
 # ═══════════════════════════════════════════════════════════════════════════
-# Deployment + Service del incident-enricher (5A: webhook receiver mínimo).
+# Deployment + Service del incident-enricher.
+# 5B (2do incremento): inyecta el token de Argo (Secret) como variable de entorno.
 # Vive en 'monitoring' porque es parte de la plataforma que observa, no la app.
 # ═══════════════════════════════════════════════════════════════════════════
 apiVersion: apps/v1
@@ -18,10 +19,19 @@ spec:
     spec:
       containers:
         - name: incident-enricher
-          image: incident-enricher:0.2.0   # 5B: recolección de contexto + plantilla
+          image: incident-enricher:0.3.0   # 5B-2: integración con Argo CD API
           imagePullPolicy: IfNotPresent   # usa la imagen importada a k3d (no registry)
           ports:
             - containerPort: 8000
+          env:
+            # El token de Argo se inyecta DESDE el Secret (creado imperativamente,
+            # fuera de Git). El deployment solo REFERENCIA el Secret por nombre;
+            # el valor del token nunca aparece en este manifiesto versionado.
+            - name: ARGOCD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: argocd-enricher-token
+                  key: token
           livenessProbe:
             httpGet:
               path: /healthz
