@@ -245,49 +245,57 @@ midiendo si el LLM se justifica sobre el baseline.
   Verificado también el ciclo `resolved` (send_resolved: true).
   Evidencia: evidence/5a-webhook-firing.png, evidence/5a-webhook-resolved.png
 
-### 5B — Recolección determinista de contexto + plantilla baseline
+### 5B — Recolección determinista de contexto + plantilla baseline  _(completa)_
 
-**Objetivo:** que el enricher deje de solo loguear y RECOLECTE contexto de otras
-fuentes, armando un resumen de incidente con plantilla determinista (cero LLM).
-Este es el BASELINE contra el que se medirá el LLM en 5C.
+**Objetivo:** que el enricher RECOLECTE contexto de múltiples fuentes y arme un
+resumen de incidente con plantilla determinista (cero LLM). Es el BASELINE contra
+el que se medirá el LLM en 5C — construido genuinamente bueno para que la
+comparación de EXP-005 sea honesta.
 
-**Primer incremento — integración con Prometheus (completado):**
-- El enricher consulta la API HTTP de Prometheus
-  (`GET /api/v1/query?query=sli:availability:ratio_5m`) para obtener el valor
-  actual del SLI en vivo — lectura programática de métricas, no vía UI.
-- Cálculo determinista de la duración del incidente por aritmética de los
-  timestamps `startsAt`/`endsAt` del webhook (con manejo del caso "firing", donde
-  Alertmanager usa año 0001 como "sin fin" -> se mide hasta ahora).
-- Plantilla determinista que YUXTAPONE los datos estructurados (alerta,
-  severidad, estado, duración, SLI, resumen, detalle) en un resumen legible.
-  Deliberadamente NO narra ni correlaciona — esa síntesis es lo que el LLM
-  añadirá en 5C. El baseline se hizo genuinamente bueno para que la comparación
-  de EXP-005 sea honesta.
+**1er incremento — Prometheus:**
+- Consulta la API HTTP de Prometheus (`/api/v1/query`) por el SLI actual —
+  lectura programática de métricas, no vía UI.
+- Cálculo determinista de la duración del incidente (aritmética de startsAt/endsAt;
+  maneja el caso "firing" donde Alertmanager usa año 0001 como "sin fin").
+
+**2do incremento — Argo CD:**
+- Consulta la API de Argo (`/api/v1/applications`) por el deploy más reciente
+  (app, revisión/commit, timestamp de sync). Habilita la correlación temporal
+  deploy <-> caída del SLI que el LLM narrará en 5C.
+- Autenticación: cuenta de servicio `enricher` de SOLO LECTURA, creada vía los
+  ConfigMaps de Argo (argocd-cm para la cuenta apiKey; argocd-rbac-cm con
+  policy.csv `get applications` — least privilege). Token generado por la API de
+  Argo y guardado en un Secret (creado imperativamente, fuera de Git); el
+  deployment lo inyecta como variable de entorno. El token nunca toca el repo.
 
 **Decisiones de diseño:**
-- **httpx (async)** sobre requests: no bloquea el event loop de FastAPI mientras
-  espera a Prometheus.
-- **Degradación con gracia:** si Prometheus no responde o devuelve vacío, el
-  enricher NO se cae — loguea WARNING, marca el SLI como "no disponible" y entrega
-  el resumen con el resto del contexto. Un servicio que se activa DURANTE
-  incidentes no puede depender de que todas sus fuentes estén sanas (el incidente
-  mismo puede ser la causa del fallo de una fuente).
-- **URL de Prometheus como variable de entorno** (no hardcodeada), con default al
-  DNS interno.
-- **Tag de imagen versionado** (0.1.0 -> 0.2.0): reusar un tag mutable causa que
-  Kubernetes sirva una versión cacheada; un tag nuevo fuerza redespliegue limpio.
+- **httpx (async)** sobre requests: no bloquea el event loop de FastAPI.
+- **Degradación con gracia:** cada fuente (Prometheus, Argo) falla de forma
+  independiente sin tumbar el enricher — marca ese dato como "no disponible" y
+  entrega el resto. Un servicio que se activa durante incidentes no puede
+  depender de que todas sus fuentes estén sanas.
+- **Manejo del SLI NaN:** Prometheus devuelve NaN cuando el SLI se calcula sobre
+  una ventana sin tráfico (0/0). No es fallo de la fuente sino ausencia de datos;
+  se detecta (NaN != NaN, IEEE 754) y se marca "no disponible" en vez de mostrar
+  un confuso "nan%". Caso límite encontrado comparando dos ejecuciones y corregido.
+- **verify=False** en la llamada a Argo (cert autofirmado en local): atajo
+  consciente de desarrollo; en producción se montaría el CA cert y se verificaría.
+- **Tags de imagen versionados** (0.2.0 -> 0.3.0 -> 0.3.1): un tag nuevo por
+  cambio fuerza redespliegue limpio y evita servir versiones cacheadas.
 
-**Hito validado (ambos caminos):**
-- Camino feliz: alerta SLOBurnRateHigh, SLI recolectado de Prometheus = 49.5%
-  (coincide con el 50% de fallos inyectados). Resumen ensamblado correctamente.
-  Evidencia: evidence/5b-baseline-summary.png
-- Camino degradado: Prometheus devuelve resultado vacío -> SLI "no disponible",
-  pero el enricher entrega el resumen igual sin caerse (degradación con gracia
-  probada en vivo). Evidencia: evidence/5b-graceful-degradation.png
+**Hito validado (evidencia honesta, incluyendo el bug encontrado y corregido):**
+- Tres fuentes fusionadas: alerta (Alertmanager) + SLI (Prometheus) + último
+  deploy (Argo) en un mismo resumen. Evidencia: evidence/5b-argo-integration.png
+- Bug del SLI NaN: SLI sobre ventana sin tráfico salía como "nan%" (encontrado
+  comparando dos ejecuciones). Evidencia: evidence/5b-nan-bug.png
+- Bug corregido: mismo caso ahora muestra "no disponible" con warning explicativo
+  (NaN != NaN, IEEE 754). Evidencia: evidence/5b-nan-fix.png
 
-**Segundo incremento — integración con Argo CD (siguiente):** consultar la API de
-Argo para incorporar "qué se desplegó recientemente", habilitando la correlación
-temporal deploy <-> caída del SLI que el LLM narrará en 5C.
+**El baseline determinista está completo:** contexto de 3 fuentes (alerta de
+Alertmanager + SLI de Prometheus + deploy de Argo), ensamblado en un resumen
+legible, resiliente a fallos de fuente y a datos vacíos. Cero LLM. Este es el
+punto de partida de la comparación de 5C.
+
 
 ### 5C — Capa LLM + EXP-005 (comparación baseline vs LLM)  _(pendiente)_
 
