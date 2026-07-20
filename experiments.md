@@ -260,4 +260,77 @@ No alerto sobre umbrales de infraestructura sino sobre consumo de error budget,
 la metodología del SRE Workbook de Google, que elimina el ruido de los umbrales
 estáticos. El enrutamiento a un canal real sería trabajo de Alertmanager.
 
+---
+
+## EXP-005 — Baseline determinista vs. narrativa LLM (enriquecimiento de incidentes)
+
+- **Fecha:** 2026-07-19
+- **Fase:** 5C (capa LLM sobre baseline determinista).
+- **Entorno:** k3d local. Enricher con contexto de 3 fuentes (Alertmanager +
+  Prometheus SLI + Argo CD deploy). LLM: Groq (llama-3.3-70b-versatile), temp 0.3.
+
+### Hipótesis
+Sobre el mismo incidente y el mismo contexto ya recolectado de forma determinista,
+un LLM aporta valor al EXPLICITAR la correlación temporal (deploy <-> caída del
+SLI) que el baseline solo yuxtapone, produciendo una narrativa accionable — SIN
+inventar datos, sin afirmar causalidad absoluta, y reportando datos faltantes como
+faltantes. El LLM narra; no decide ni diagnostica.
+
+### Método (comparación cualitativa, mismo input)
+El enricher recolecta el contexto UNA vez y genera DOS salidas del mismo dict:
+(1) plantilla determinista (baseline), (2) narrativa LLM. Se comparan lado a lado
+sobre dos incidentes: uno con SLI disponible (firing) y otro con SLI no disponible
+(resolved). Criterios definidos de antemano: ¿explicita la correlación?
+¿es accionable? ¿respeta las restricciones del prompt (no causalidad absoluta,
+no inventar, reportar faltantes)?
+
+### Resultado
+**Caso 1 — incidente con datos completos (SLI 51%, deploy conocido):**
+- Baseline: yuxtapuso los hechos (SLI 51%, deploy monitoring @ commit, hora).
+- LLM: explicitó la correlación — señaló el deploy como "sospechoso probable a
+  investigar en relación con la degradación", y añadió priorización accionable
+  ("investigar para determinar la causa raíz"). Usó lenguaje de hipótesis
+  ("podría ser"), NO de causalidad confirmada. Respetó la frontera.
+
+**Caso 2 — incidente con dato faltante (SLI no disponible, resolved):**
+- Baseline: mostró "SLI: no disponible".
+- LLM: reportó honestamente "la disponibilidad del SLI no está disponible para
+  este período" — NO inventó un valor. Respetó la regla anti-alucinación.
+
+### Interpretación (juicio honesto)
+- **Valor real aportado por el LLM:** convierte datos adyacentes en una hipótesis
+  conectada (correlación temporal explícita) y orienta la acción. Este es el 30%
+  que justifica el LLM sobre el baseline, tal como se predijo en el diseño.
+- **Límite honesto del valor:** el aporte es mayor para un ingeniero junior o
+  para reducir carga cognitiva bajo estrés; para un senior que lee el baseline al
+  instante, la narrativa puede ser redundante. El LLM no aporta datos nuevos —
+  solo comunica mejor los existentes.
+- **Validación de la frontera:** en ambos casos el LLM respetó el prompt
+  restringido — no afirmó causalidad absoluta, no inventó el dato faltante. La
+  frontera código-correlaciona / LLM-narra se sostuvo empíricamente.
+
+### Contraste con el diseño
+Se confirma la decisión de diseño (ADR-008): el enriquecimiento se resuelve ~70%
+con el baseline determinista; el LLM aporta el 30% de síntesis/correlación. La
+convivencia (Opción B) probó su valor: cuando Gemini falló antes (429), el
+baseline salió igual — el LLM es capa de valor añadido, no dependencia crítica.
+
+### Limitaciones / honestidad
+- Evaluación cualitativa sobre 2 incidentes, no un estudio estadístico.
+- "Valor" del LLM juzgado por criterios definidos, no por métrica numérica
+  (deliberado: la calidad narrativa no se reduce honestamente a un número).
+- Groq como proveedor tras descartar Gemini por cuota (limit:0); el bajo
+  acoplamiento permitió el cambio tocando una sola función.
+
+### Evidencia
+- evidence/exp-005-llm-narrative-firing.png   (caso con datos, correlación explícita)
+- evidence/exp-005-llm-narrative-nodata.png   (caso sin SLI, reportado sin inventar)
+
+### Talking point derivado
+Medí el aporte del LLM sobre un baseline determinista fuerte, no contra un
+strawman. El LLM explicitó la correlación temporal deploy-caída como 'sospechoso
+probable', respetando el prompt restringido en ambos casos —con datos y sin
+ellos, donde reportó el faltante sin inventarlo—. Concluí honestamente que el
+valor es real pero contextual al lector: mayor para reducir carga cognitiva, y
+el baseline determinista sigue siendo la base confiable si el LLM falla.
 
