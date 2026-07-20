@@ -185,10 +185,59 @@ ingeniero, no solo ejecutar un plan."
 
 ---
 
+## ADR-008 — Capa de IA: baseline determinista + LLM restringido (no LLM por moda)
+
+**Contexto:** El enriquecimiento de incidentes puede resolverse con lógica
+determinista o con un LLM. La regla del proyecto: no meter un LLM por moda; si una
+regla determinista resuelve el problema, se usa esa.
+
+**Decisión:** Arquitectura híbrida en dos capas que CONVIVEN (no se reemplazan):
+1. **Baseline determinista** (siempre): el código recolecta contexto de 3 fuentes
+   (alerta de Alertmanager, SLI de Prometheus, último deploy de Argo CD), calcula
+   la correlación temporal de forma determinista (aritmética de timestamps), y
+   arma un resumen con plantilla. Estos son HECHOS verificados.
+2. **Narrativa LLM** (capa de valor añadido): un LLM toma ese contexto ya
+   verificado y lo SINTETIZA en lenguaje natural accionable, explicitando la
+   correlación que el baseline solo yuxtapone.
+
+**Frontera de responsabilidad (lo esencial):**
+- El CÓDIGO correlaciona de forma determinista; el LLM SOLO narra esa correlación
+  ya calculada. Si se quita el LLM, el sistema sigue sabiendo qué deploy coincide
+  con la caída — solo pierde la narrativa legible.
+- El LLM está restringido por prompt: no inventar causas, no afirmar causalidad
+  absoluta ("sospechoso probable a investigar", nunca "causa confirmada"),
+  reportar datos faltantes como faltantes, no diagnosticar desde logs.
+- Validado empíricamente en EXP-005: el LLM respetó la frontera con datos
+  completos Y con un dato faltante (no lo inventó).
+
+**Por qué la convivencia (Opción B) y no reemplazo:** los hechos deterministas son
+la base confiable; el LLM es valor añadido verificable contra esa base. Si el LLM
+falla, el ingeniero recibe igual el baseline completo (degradación con gracia,
+demostrada cuando el primer proveedor devolvió 429).
+
+**Decisión de proveedor:** Se optó por LLM vía API (no local) para no saturar el
+hardware. Se evaluó primero Gemini; su free tier no estaba disponible para la
+cuenta (quota limit: 0, probable restricción regional). Se cambió a Groq. El
+cambio fue trivial —una sola función (generate_llm_narrative)— porque el proveedor
+está desacoplado del resto del sistema. Esa intercambiabilidad es una propiedad
+de diseño deliberada: no acoplarse a un proveedor de IA específico. 
+Evidencia: evidence/5c-graceful-degradation-429.png 
+
+**Tradeoff reconocido:** integrar un LLM añade latencia, costo y límites de rate
+que la lógica determinista no tiene (topamos un 429). Un enricher de producción
+necesitaría rate limiting o cache — irónicamente, una tormenta de alertas (cuando
+más se necesita) es cuando más fácil se satura la cuota del LLM.
+
+**Talking point:** El enriquecimiento se resuelve ~70% con una plantilla
+determinista; el LLM aporta el 30% de síntesis y correlación explícita, no el tono.
+La lógica crítica (detectar qué deploy coincide) es determinista y confiable; el
+LLM solo comunica. Lo probé: respeta la frontera con y sin datos, y si falla, el
+baseline sale igual. Y está desacoplado — cambié de proveedor tocando una función.
+
+---
+
 ## Pendientes de decisión (a documentar cuando se aborden)
 
-- **ADR-008** — Decisión sobre la capa de IA: qué se resuelve con reglas
-  deterministas y qué justifica un LLM (enriquecimiento de incidentes).
 - **ADR-009** — Estrategia de burn-rate alerting (ventanas múltiples) vs.
   umbrales estáticos.
 

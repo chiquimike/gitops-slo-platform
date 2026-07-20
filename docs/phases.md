@@ -296,8 +296,51 @@ Alertmanager + SLI de Prometheus + deploy de Argo), ensamblado en un resumen
 legible, resiliente a fallos de fuente y a datos vacíos. Cero LLM. Este es el
 punto de partida de la comparación de 5C.
 
+### 5C — Capa LLM sobre el baseline determinista  _(completa)_
 
-### 5C — Capa LLM + EXP-005 (comparación baseline vs LLM)  _(pendiente)_
+**Objetivo:** añadir una narrativa en lenguaje natural ENCIMA del baseline
+determinista (los dos conviven — Opción B), y medir en EXP-005 si el LLM aporta
+valor real sobre el baseline. El LLM narra la correlación ya calculada por el
+código; no decide ni diagnostica.
+
+**Implementación:**
+- El enricher recolecta el contexto UNA vez y genera dos salidas del mismo dict:
+  el baseline determinista (hechos) y la narrativa LLM (síntesis). Garantiza que
+  la comparación de EXP-005 sea sobre el mismo input.
+- **Prompt restringido** que codifica la frontera: no inventar causas, no afirmar
+  causalidad absoluta ("sospechoso probable", no "causa confirmada"), reportar
+  faltantes como faltantes, no diagnosticar de logs. Temperatura 0.3 (consistencia
+  sobre creatividad).
+- **Convivencia (Opción B):** el reporte final tiene el baseline (siempre) + la
+  narrativa (si el LLM responde). Si el LLM falla, el ingeniero recibe igual todos
+  los hechos.
+
+**Proveedor LLM — decisión y cambio (documentado, ADR-008):**
+- Se optó por API en vez de local (no saturar la ThinkPad).
+- Gemini se descartó: su free tier no estaba disponible para la cuenta
+  (quota limit: 0, probable restricción regional). El diseño degradó con gracia
+  ante el 429 (el baseline salió igual — evidencia útil de resiliencia).
+- Se cambió a **Groq** (llama-3.3-70b-versatile). El cambio afectó UNA sola
+  función (generate_llm_narrative); el resto del sistema no se enteró — bajo
+  acoplamiento comprobado.
+
+**EXP-005 — comparación baseline vs LLM (evaluación cualitativa honesta):**
+- Con datos completos: el LLM explicitó la correlación temporal deploy<->caída
+  como "sospechoso probable a investigar", respetando la frontera (lenguaje de
+  hipótesis, no causalidad absoluta).
+- Con dato faltante (SLI no disponible): el LLM lo reportó como faltante, NO lo
+  inventó — validando la restricción anti-alucinación.
+- Conclusión honesta: el LLM aporta valor real (correlación explícita +
+  priorización accionable), pero contextual al lector — mayor para reducir carga
+  cognitiva/juniors, potencialmente redundante para un senior. El baseline sigue
+  siendo la base confiable.
+- Evidencia: evidence/exp-005-llm-narrative-firing.png,
+  evidence/exp-005-llm-narrative-nodata.png,
+  evidence/5c-graceful-degradation-429.png 
+
+**Fase 5 completa:** enriquecimiento de incidentes de punta a punta — alerta ->
+Alertmanager -> enricher -> contexto de 3 fuentes -> baseline determinista +
+narrativa LLM restringida, con degradación con gracia y proveedor desacoplado.
 
 
 ---
